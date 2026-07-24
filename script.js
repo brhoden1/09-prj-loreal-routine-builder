@@ -6,6 +6,8 @@ const chatWindow = document.getElementById("chatWindow");
 const selectedProductsList = document.getElementById("selectedProductsList");
 const userInput = document.getElementById("userInput");
 const generateRoutineButton = document.getElementById("generateRoutine");
+const clearAllButton = document.getElementById("clearAllButton");
+const productSearch = document.getElementById("productSearch");
 
 const conversationMessages = [
   {
@@ -20,15 +22,40 @@ const conversationMessages = [
 ];
 
 /* Track which products are selected */
-let selectedProducts = [];
+const STORAGE_KEY = "lorealSelectedProducts";
+
+function loadSelectedProducts() {
+  try {
+    const savedProducts = localStorage.getItem(STORAGE_KEY);
+    if (!savedProducts) return [];
+
+    const parsedProducts = JSON.parse(savedProducts);
+    return Array.isArray(parsedProducts) ? parsedProducts : [];
+  } catch (error) {
+    console.error("Could not load saved products:", error);
+    return [];
+  }
+}
+
+function saveSelectedProducts() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedProducts));
+  } catch (error) {
+    console.error("Could not save selected products:", error);
+  }
+}
+
+let selectedProducts = loadSelectedProducts();
 let allProducts = [];
 
 /* Show initial placeholder until user selects a category */
 productsContainer.innerHTML = `
   <div class="placeholder-message">
-    Select a category to view products
+    Search for a product or select a category to view products
   </div>
 `;
+
+renderSelectedProducts();
 
 /* Load product data from JSON file */
 async function loadProducts() {
@@ -79,6 +106,71 @@ function displayProducts(products) {
       }
     });
   });
+
+  updateSelectionState();
+}
+
+function updateSelectionState() {
+  document.querySelectorAll(".product-card").forEach((card) => {
+    const cardId = card.getAttribute("data-product-id");
+    const isSelected = selectedProducts.some(
+      (product) => product.id === cardId,
+    );
+    card.classList.toggle("selected", isSelected);
+  });
+}
+
+function applyProductFilters() {
+  if (!allProducts.length) {
+    loadProducts().then(() => applyProductFilters());
+    return;
+  }
+
+  const selectedCategory = categoryFilter.value;
+  const searchTerm = productSearch.value.trim().toLowerCase();
+
+  let filteredProducts = allProducts;
+
+  if (selectedCategory) {
+    filteredProducts = filteredProducts.filter(
+      (product) => product.category === selectedCategory,
+    );
+  }
+
+  if (searchTerm) {
+    filteredProducts = filteredProducts.filter((product) => {
+      const searchableText = [
+        product.name,
+        product.brand,
+        product.category,
+        product.description,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(searchTerm);
+    });
+  }
+
+  if (!selectedCategory && !searchTerm) {
+    productsContainer.innerHTML = `
+      <div class="placeholder-message">
+        Select a category or search for a product
+      </div>
+    `;
+    return;
+  }
+
+  if (filteredProducts.length === 0) {
+    productsContainer.innerHTML = `
+      <div class="placeholder-message">
+        No products match your search
+      </div>
+    `;
+    return;
+  }
+
+  displayProducts(filteredProducts);
 }
 
 /* Toggle a product's selection when clicked */
@@ -106,12 +198,30 @@ function toggleProductSelection(e) {
     card.classList.add("selected");
   }
 
+  saveSelectedProducts();
+
   /* Update the selected products display */
   renderSelectedProducts();
 }
 
 /* Render the selected products list with remove buttons */
+function clearAllSelections() {
+  selectedProducts = [];
+  saveSelectedProducts();
+
+  document.querySelectorAll(".product-card.selected").forEach((card) => {
+    card.classList.remove("selected");
+  });
+
+  renderSelectedProducts();
+}
+
+clearAllButton.addEventListener("click", clearAllSelections);
+
 function renderSelectedProducts() {
+  const hasSelections = selectedProducts.length > 0;
+  clearAllButton.classList.toggle("visible", hasSelections);
+
   if (selectedProducts.length === 0) {
     selectedProductsList.innerHTML = `<p style="color: #999; font-size: 14px;">No products selected</p>`;
   } else {
@@ -133,6 +243,7 @@ function renderSelectedProducts() {
         const productId = btn.getAttribute("data-product-id");
         /* Remove from selected products array */
         selectedProducts = selectedProducts.filter((p) => p.id !== productId);
+        saveSelectedProducts();
         /* Remove visual indicator from product card */
         const card = document.querySelector(`[data-product-id="${productId}"]`);
         if (card) card.classList.remove("selected");
@@ -221,30 +332,13 @@ function handleModalKeydown(e) {
   }
 }
 
-/* Filter and display products when category changes */
-categoryFilter.addEventListener("change", async (e) => {
-  const products = await loadProducts();
-  const selectedCategory = e.target.value;
+/* Filter and display products when the category or search text changes */
+categoryFilter.addEventListener("change", () => {
+  applyProductFilters();
+});
 
-  /* filter() creates a new array containing only products 
-     where the category matches what the user selected */
-  const filteredProducts = products.filter(
-    (product) => product.category === selectedCategory,
-  );
-
-  displayProducts(filteredProducts);
-
-  /* Re-apply selected styling to products currently visible and already selected */
-  const visibleCards = document.querySelectorAll(".product-card");
-  visibleCards.forEach((card) => {
-    const cardId = card.getAttribute("data-product-id");
-    const isSelected = selectedProducts.some((p) => p.id === cardId);
-    if (isSelected) {
-      card.classList.add("selected");
-    } else {
-      card.classList.remove("selected");
-    }
-  });
+productSearch.addEventListener("input", () => {
+  applyProductFilters();
 });
 
 // Set initial message
